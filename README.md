@@ -141,6 +141,12 @@ has to.
 
 ---
 
+## Repository settings
+
+Public, with `main` protected: no force pushes, no deletions, CI must pass, and
+secret scanning blocks credentials before they land. What that does and does not
+cover is in [docs/repository-security.md](docs/repository-security.md).
+
 ## Licence
 
 [PolyForm Noncommercial 1.0.0](LICENSE.md).
