@@ -113,8 +113,10 @@ frictionless.
 
 ## Deploying
 
+Step by step, including what to do if the custom domain does not attach:
+**[DEPLOY.md](DEPLOY.md)**.
+
 ```bash
-npx wrangler login
 npm run deploy
 ```
 
