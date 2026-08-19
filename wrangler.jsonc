@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  // Cloudflare Workers with static assets, not Pages.
+  //
+  // Pages is the older product and Cloudflare now points new static projects at
+  // Workers Assets; it also keeps everything under one `wrangler deploy` and one
+  // config file, which matters here because the API is already a Worker.
+  "name": "fuse-web",
+  "compatibility_date": "2025-01-01",
+
+  "assets": {
+    "directory": "./dist",
+    // The game is a single page: every route must serve index.html so a deep
+    // link or a refresh does not 404.
+    "not_found_handling": "single-page-application"
+  },
+
+  // The site answers on a subdomain of a zone this account controls.
+  //
+  // `custom_domain: true` makes Cloudflare create and manage the DNS record on
+  // deploy, so there is nothing to add by hand — but it requires andrewgarcia.dev
+  // to already be a zone in the same Cloudflare account. If it is not, add the
+  // domain to Cloudflare first (Websites → Add a site) and repoint the
+  // nameservers; until then, comment this block out and the site is reachable at
+  // fuse-web.<account>.workers.dev.
+  "routes": [
+    {
+      "pattern": "fuse.andrewgarcia.dev",
+      "custom_domain": true
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}

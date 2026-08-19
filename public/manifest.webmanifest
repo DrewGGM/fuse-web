@@ -1,0 +1,30 @@
+{
+  "name": "Fuse — Reto diario",
+  "short_name": "Fuse",
+  "description": "Un reto de reacción en cadena al día. El mismo tablero para todo el mundo.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070B0D",
+  "theme_color": "#070B0D",
+  "categories": [
+    "games",
+    "puzzle"
+  ],
+  "lang": "es",
+  "icons": [
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

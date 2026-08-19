@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
+    />
+    <!--
+      Content Security Policy.
+
+      The game ships every asset it uses and talks to nothing at runtime, so the
+      policy is close to maximal: no remote script, no inline script, no plugins.
+      This is defence in depth rather than a fix for a known hole — if a future
+      dependency or a compromised build ever tried to phone home, the WebView
+      refuses instead of complying.
+
+      Written on one line per directive with no wrapping. An earlier version was
+      indented across lines, and the browser parsed the continuation as extra
+      sources of the previous directive: object-src silently became
+      "'none' base-uri 'none' form-action ..." and, because 'none' must stand
+      alone, was ignored entirely. A policy that looks stricter than it is, is
+      worse than none.
+
+      'unsafe-inline' is allowed for styles only: Capacitor and the canvas set
+      inline style attributes, and style-src-attr is not reliable across the
+      Android WebView versions this targets.
+
+      manifest-src and worker-src are here because default-src 'none' otherwise
+      blocks both, and the failure is quiet in the worst way: the page works,
+      but the browser refuses the manifest and the app is silently not
+      installable. Found by loading the built site, not by reading the policy.
+
+      frame-ancestors is absent on purpose — it is ignored in a <meta> tag. It
+      is set as a real response header in public/_headers instead.
+
+      %API_ORIGIN% is substituted at build time with whatever API the build
+      points at. Hardcoding the production host meant a local `wrangler dev`
+      build silently had its own API blocked — which did at least prove the
+      policy is enforced, and that the offline queue handles it.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; media-src 'self' blob:; connect-src 'self' %API_ORIGIN%; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'" />
+    <meta name="theme-color" content="#070B0D" />
+    <meta name="description" content="Fuse — un reto de reacción en cadena al día. El mismo tablero para todo el mundo." />
+    <title>Fuse</title>
+    <link rel="icon" href="./favicon.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!--
+      Open Graph. The whole growth plan is people posting their result, so the
+      link they paste has to look like something worth tapping.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fuse — Reto diario" />
+    <meta property="og:description" content="Un reto de reacción en cadena al día. El mismo tablero para todo el mundo, tres intentos." />
+    <meta property="og:image" content="./icon-512.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="apple-touch-icon" href="./favicon.png" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- ============================ HOME ============================ -->
+      <section class="screen" id="screen-home" data-screen="home">
+        <header class="home-head">
+          <div class="wordmark" aria-label="Fuse">
+            <span class="wordmark-spark" aria-hidden="true"></span>
+            <h1>FUSE</h1>
+          </div>
+          <button class="icon-btn" id="btn-settings" aria-label="Ajustes">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2a2 2 0 1 1-4 0V21a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1h.2a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+          </button>
+        </header>
+
+        <div class="daily-card" id="daily-card">
+          <div class="daily-top">
+            <span class="daily-label">Reto de hoy</span>
+            <span class="daily-no" id="daily-no">#—</span>
+          </div>
+          <div class="preview-wrap">
+            <canvas id="preview-canvas" class="preview" aria-label="Vista previa del tablero de hoy"></canvas>
+          </div>
+          <div class="daily-meta">
+            <div class="meta-cell">
+              <span class="meta-v" id="meta-attempts">3</span>
+              <span class="meta-l">intentos</span>
+            </div>
+            <div class="meta-cell">
+              <span class="meta-v" id="meta-best">—</span>
+              <span class="meta-l">tu mejor</span>
+            </div>
+            <div class="meta-cell">
+              <span class="meta-v" id="meta-par">—</span>
+              <span class="meta-l">objetivo</span>
+            </div>
+            <div class="meta-cell">
+              <span class="meta-v" id="meta-streak">0</span>
+              <span class="meta-l">racha</span>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-lg" id="btn-play">Jugar</button>
+          <p class="daily-done" id="daily-done" hidden>
+            Ya jugaste hoy. Vuelve mañana para un tablero nuevo.
+          </p>
+        </div>
+
+        <nav class="home-nav">
+          <button class="btn btn-ghost" id="btn-archive">Archivo</button>
+          <button class="btn btn-ghost" id="btn-howto">Cómo se juega</button>
+        </nav>
+        <button class="btn btn-secondary btn-install" id="btn-install" hidden>
+          Instalar Fuse
+        </button>
+
+        <p class="reset-note" id="reset-note"></p>
+        <p class="sync-note" id="home-sync-note" hidden></p>
+      </section>
+
+      <!-- ============================ GAME ============================ -->
+      <section class="screen" id="screen-game" data-screen="game" hidden>
+        <header class="game-head">
+          <button class="icon-btn" id="btn-back" aria-label="Volver">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div class="game-title">
+            <span class="game-no" id="game-no">#—</span>
+            <span class="game-sub" id="game-sub">Intento 1 de 3</span>
+          </div>
+          <div class="score-live" id="score-live">0</div>
+        </header>
+
+        <div class="board-wrap">
+          <canvas id="board-canvas" aria-label="Tablero de juego"></canvas>
+          <div class="combo-badge" id="combo-badge" hidden>×1</div>
+        </div>
+
+        <div class="tray-wrap">
+          <div class="tray" id="tray" role="toolbar" aria-label="Piezas disponibles"></div>
+          <p class="tray-note" id="tray-note">Toca una pieza y luego el tablero. No hace falta usarlas todas.</p>
+        </div>
+
+        <div class="game-actions">
+          <button class="btn btn-ghost btn-sm" id="btn-undo" disabled>Deshacer</button>
+          <button class="btn btn-primary btn-launch" id="btn-launch" disabled>
+            <span class="launch-label">Encender</span>
+            <span class="launch-hint" id="launch-hint">Coloca 5 piezas</span>
+          </button>
+          <button class="btn btn-ghost btn-sm" id="btn-clear" disabled>Vaciar</button>
+        </div>
+      </section>
+
+      <!-- =========================== RESULT =========================== -->
+      <section class="screen" id="screen-result" data-screen="result" hidden>
+        <div class="result-body">
+          <span class="result-label" id="result-label">Resultado</span>
+          <div class="result-score" id="result-score">0</div>
+          <div class="result-detail" id="result-detail">0 de 0 nodos</div>
+
+          <div class="result-bar" aria-hidden="true">
+            <div class="result-bar-fill" id="result-bar-fill"></div>
+            <div class="result-bar-mark" id="result-bar-mark" hidden></div>
+          </div>
+          <div class="result-bar-legend">
+            <span id="result-best-label">Tu mejor: —</span>
+            <span id="result-par-label">Objetivo: —</span>
+          </div>
+          <p class="result-gap" id="result-gap"></p>
+
+          <div class="rank-card" id="rank-card" hidden>
+            <div class="rank-line">
+              <span class="rank-pos" id="rank-pos">—</span>
+              <span class="rank-of" id="rank-of"></span>
+            </div>
+            <div class="rank-board" id="rank-board"></div>
+            <button class="btn btn-ghost btn-sm" id="btn-full-board">Ver clasificación</button>
+          </div>
+          <p class="sync-note" id="sync-note" hidden></p>
+
+          <div class="result-share" id="result-share"></div>
+
+          <div class="result-actions">
+            <button class="btn btn-primary" id="btn-share">Compartir</button>
+            <button class="btn btn-secondary" id="btn-clip" hidden>Guardar clip</button>
+            <button class="btn btn-secondary" id="btn-retry">Otro intento</button>
+            <button class="btn btn-ghost" id="btn-result-home">Inicio</button>
+          </div>
+
+          <div class="offers" id="offers"></div>
+        </div>
+      </section>
+
+      <!-- =========================== ARCHIVE ========================== -->
+      <section class="screen" id="screen-archive" data-screen="archive" hidden>
+        <header class="sub-head">
+          <button class="icon-btn" id="btn-archive-back" aria-label="Volver">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <h2>Archivo</h2>
+        </header>
+        <p class="sub-note">Tableros pasados. Intentos ilimitados, sin ranking y sin anuncios.</p>
+        <div class="archive-list" id="archive-list"></div>
+      </section>
+
+      <!-- =========================== HOW TO =========================== -->
+      <section class="screen" id="screen-howto" data-screen="howto" hidden>
+        <header class="sub-head">
+          <button class="icon-btn" id="btn-howto-back" aria-label="Volver">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <h2>Cómo se juega</h2>
+        </header>
+        <div class="howto">
+          <p class="howto-lead">
+            Todo el mundo recibe hoy el mismo tablero y las mismas cinco piezas.
+            Coloca las que quieras, enciende una sola chispa, y mira qué pasa.
+            No hay una solución correcta: persigues la puntuación más alta.
+          </p>
+          <ul class="howto-rules">
+            <li><b>La chispa</b> avanza en línea recta y pierde energía en cada paso.</li>
+            <li><b>Los nodos</b> se encienden al pasar por encima. Cada uno suma más que el anterior si encadenas rápido.</li>
+            <li><b>Los muros</b> apagan la chispa.</li>
+            <li><b>No hace falta usar las cinco piezas.</b> Una basta, y una pieza de más en el camino puede costarte puntos.</li>
+            <li>Tienes <b>3 intentos</b>. Cuenta el mejor.</li>
+          </ul>
+          <h3>Las piezas</h3>
+          <div class="piece-guide" id="piece-guide"></div>
+        </div>
+      </section>
+
+      <!-- ========================== SETTINGS ========================== -->
+      <section class="screen" id="screen-settings" data-screen="settings" hidden>
+        <header class="sub-head">
+          <button class="icon-btn" id="btn-settings-back" aria-label="Volver">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <h2>Ajustes</h2>
+        </header>
+        <div class="settings">
+          <label class="setting">
+            <span class="setting-text">
+              <b>Recordatorio diario</b>
+              <small>Un aviso cuando hay tablero nuevo. Desactivado hasta que lo pidas.</small>
+            </span>
+            <input type="checkbox" id="set-reminder" class="switch" />
+          </label>
+          <label class="setting">
+            <span class="setting-text">
+              <b>Sonido</b>
+              <small>Chasquidos de la chispa y del encendido.</small>
+            </span>
+            <input type="checkbox" id="set-sound" class="switch" checked />
+          </label>
+          <label class="setting">
+            <span class="setting-text">
+              <b>Menos movimiento</b>
+              <small>Reduce destellos y sacudidas de cámara.</small>
+            </span>
+            <input type="checkbox" id="set-reduced" class="switch" />
+          </label>
+
+          <h3 class="settings-h">Apariencia de la chispa</h3>
+          <div class="palette-grid" id="palette-grid"></div>
+
+          <h3 class="settings-h">Ayuda</h3>
+          <button class="btn btn-secondary" id="btn-replay-tutorial">Ver el tutorial otra vez</button>
+
+          <h3 class="settings-h">Apoyo</h3>
+          <div class="support" id="support"></div>
+
+          <p class="settings-foot" id="settings-foot"></p>
+        </div>
+      </section>
+
+      <!-- ======================== LEADERBOARD ========================= -->
+      <section class="screen" id="screen-board" data-screen="board" hidden>
+        <header class="sub-head">
+          <button class="icon-btn" id="btn-board-back" aria-label="Volver">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <h2>Clasificación</h2>
+        </header>
+        <p class="sub-note" id="board-sub">Reto de hoy</p>
+        <div class="board-list" id="board-list"></div>
+        <button class="btn btn-ghost" id="btn-top-replay" hidden>Ver la jugada ganadora</button>
+      </section>
+
+      <!-- ========================== TUTORIAL ========================== -->
+      <section class="screen screen-tutorial" id="screen-tutorial" data-screen="tutorial" hidden>
+        <header class="tut-head">
+          <span class="tut-step" id="tut-step">1 / 5</span>
+          <button class="btn btn-ghost btn-sm" id="btn-tut-skip">Saltar</button>
+        </header>
+
+        <div class="tut-board-wrap">
+          <canvas id="tut-canvas" aria-label="Tablero del tutorial"></canvas>
+        </div>
+
+        <div class="tut-panel">
+          <p class="tut-text" id="tut-text">…</p>
+          <div class="tut-piece" id="tut-piece" hidden>
+            <canvas id="tut-piece-canvas" width="80" height="80"></canvas>
+            <span id="tut-piece-name">Espejo</span>
+          </div>
+          <button class="btn btn-primary btn-lg" id="btn-tut-next">Siguiente</button>
+        </div>
+      </section>
+
+      <!-- =========================== TOAST ============================ -->
+      <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    </div>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
