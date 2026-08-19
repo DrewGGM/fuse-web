@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "description": "Fuse — a daily chain-reaction puzzle. Web build: installable, offline, no ads.",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsx scripts/stamp-sw.ts && vite build",
@@ -16,7 +18,11 @@
     "core:check": "tsx scripts/check-core.ts",
     "core:sync": "tsx scripts/sync-core.ts",
     "ci": "npm run lint && npm run typecheck && npm run core:check && npm run test && npm run build",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "api:dev": "cd api && npx wrangler dev --port 8787",
+    "api:deploy": "cd api && npx wrangler deploy",
+    "api:migrate": "cd api && npx wrangler d1 migrations apply fuse-web-db --remote",
+    "api:migrate:local": "cd api && npx wrangler d1 migrations apply fuse-web-db --local"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
@@ -31,6 +37,7 @@
     "wrangler": "^4.124.0"
   },
   "dependencies": {
-    "@fontsource/chakra-petch": "^5.3.0"
+    "@fontsource/chakra-petch": "^5.3.0",
+    "zod": "^3.24.1"
   }
 }

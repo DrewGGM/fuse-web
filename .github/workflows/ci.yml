@@ -112,7 +112,26 @@ jobs:
           FUSE_API_BASE: ${{ vars.FUSE_API_BASE || 'https://api.fuse.andrewgarcia.dev' }}
         run: npm run build
 
-      - name: Deploy to Cloudflare
+      # The API goes first: a site deployed against a schema that has not been
+      # migrated yet would 500 on its first submission.
+      - name: Apply database migrations
+        if: steps.creds.outputs.ready == 'true'
+        working-directory: api
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler d1 migrations apply fuse-web-db --remote
+
+      - name: Deploy the API
+        if: steps.creds.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: api
+          command: deploy
+
+      - name: Deploy the site
         if: steps.creds.outputs.ready == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
@@ -127,5 +146,17 @@ jobs:
       - name: Verify what actually went live
         if: steps.creds.outputs.ready == 'true'
         run: |
+          set -e
+          api="${{ vars.FUSE_API_BASE || 'https://api.fuse.andrewgarcia.dev' }}"
+
+          # A deployed Worker that cannot reach its database returns 500 on the
+          # first real request. Better to learn that here than from a player.
+          code=$(curl -s -o /tmp/body.json -w '%{http_code}' -X POST "$api/v1/players")
+          echo "POST /v1/players -> $code"
+          test "$code" = "201"
+          grep -q '"token"' /tmp/body.json
+
+          # And a site that deploys successfully can still serve a broken CSP,
+          # a rejected manifest, or a service worker that never takes control.
           npx playwright install --with-deps chromium
           node scripts/verify-web.mjs https://fuse.andrewgarcia.dev

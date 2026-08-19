@@ -1,0 +1,38 @@
+# The web build's own API.
+#
+# Separate from the Android one on purpose: the two products are separate, so
+# they keep separate leaderboards. A player on the web competes with other web
+# players, and the phone app has its own board. The code is the same — it is
+# vendored from the same core/ this site uses, and the drift test covers both —
+# but the deployment, the database and therefore the community are distinct.
+#
+# If you ever want to merge them, point both builds at one of these Workers and
+# delete the other. Nothing in the code assumes which.
+
+name = "fuse-web-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# The alarm that matters is the rate of SCORE_MISMATCH: it means either an
+# attack, or the client and server simulations having diverged.
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fuse-web-db"
+# Filled in by `npx wrangler d1 create fuse-web-db`.
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[[routes]]
+pattern = "api.fuse.andrewgarcia.dev"
+custom_domain = true
+
+# TOKEN_SECRET is deliberately absent.
+#
+# It signs player tokens, so it is set once with
+#   npx wrangler secret put TOKEN_SECRET
+# and lives only in Cloudflare. Putting it in a [vars] block here would deploy a
+# public value as the production secret — vars in this file simply become the
+# deployed value. Local development reads it from .dev.vars, which is gitignored.
