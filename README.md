@@ -113,12 +113,17 @@ frictionless.
 
 ## Deploying
 
-Step by step, including what to do if the custom domain does not attach:
-**[DEPLOY.md](DEPLOY.md)**.
+**A push to `main` that passes CI deploys itself.** Two GitHub secrets set it
+up: [docs/continuous-deployment.md](docs/continuous-deployment.md).
+
+To publish by hand — the first time, or from a branch:
 
 ```bash
 npm run deploy
 ```
+
+Step by step, including what to do if the custom domain does not attach:
+**[DEPLOY.md](DEPLOY.md)**.
 
 That builds and publishes to Cloudflare Workers with static assets. The custom
 domain in `wrangler.jsonc` is created automatically **if** `andrewgarcia.dev` is

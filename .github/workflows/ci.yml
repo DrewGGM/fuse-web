@@ -11,6 +11,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Needed only by the deploy job, to post the live URL back onto the commit.
+  deployments: write
 
 jobs:
   verify:
@@ -50,3 +52,80 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Deploy
+  #
+  # Runs only after `verify` passes, and only on main. `needs` is what makes that
+  # true: a push whose tests fail never reaches this job, so a broken build
+  # cannot reach fuse.andrewgarcia.dev.
+  #
+  # The core-drift check inside `verify` matters most here. Web and Android
+  # submit to the same leaderboard, so shipping a web build whose simulation has
+  # drifted would start producing scores the server cannot reproduce.
+  # ---------------------------------------------------------------------------
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # A second push while one deploy is in flight waits rather than racing it —
+    # two `wrangler deploy` runs against one Worker is a coin toss over which
+    # version survives.
+    concurrency:
+      group: deploy-fuse-web
+      cancel-in-progress: false
+
+    environment:
+      name: production
+      url: https://fuse.andrewgarcia.dev
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Until the two secrets exist this job reports a notice and stops, rather
+      # than failing. A red X on every push for a setup step nobody has done yet
+      # teaches people to ignore red X's.
+      - name: Are the Cloudflare credentials configured?
+        id: creds
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] || [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Deploy skipped::Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in repository secrets. See docs/continuous-deployment.md"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build for production
+        if: steps.creds.outputs.ready == 'true'
+        # FUSE_API_BASE sets the API the client calls *and* the CSP's
+        # connect-src, so they cannot fall out of step. Overridable as a
+        # repository variable if the API ever moves.
+        env:
+          FUSE_API_BASE: ${{ vars.FUSE_API_BASE || 'https://api.fuse.andrewgarcia.dev' }}
+        run: npm run build
+
+      - name: Deploy to Cloudflare
+        if: steps.creds.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+
+      # A deploy that returns success but serves a broken page is worse than a
+      # failed one, because nothing tells you. This loads the live site in a real
+      # browser and fails the run on a CSP violation, a rejected manifest or a
+      # service worker that does not take control.
+      - name: Verify what actually went live
+        if: steps.creds.outputs.ready == 'true'
+        run: |
+          npx playwright install --with-deps chromium
+          node scripts/verify-web.mjs https://fuse.andrewgarcia.dev
