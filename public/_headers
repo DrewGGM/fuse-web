@@ -22,3 +22,10 @@
 # Hashed filenames are immutable by construction.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# The sound effects are not hashed — the service worker precaches them by name,
+# so the name has to stay stable across deploys. A day is long enough that they
+# cost nothing on a return visit and short enough that replacing one reaches
+# players without waiting for a new service worker to install.
+/sfx/*
+  Cache-Control: public, max-age=86400

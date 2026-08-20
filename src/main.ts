@@ -37,6 +37,7 @@ import {
   type Reward,
 } from './commerce.js';
 import { recordClip, shareSummary, shareText, verdict, type ClipRecorder } from './share.js';
+import { comboRate, initSound, play } from './sound.js';
 import * as api from './api.js';
 import * as sync from './sync.js';
 import * as reminder from './reminder.js';
@@ -168,7 +169,6 @@ const previewView = new BoardView(ui.previewCanvas, { preview: true });
 let session: Session | null = null;
 let today = utcDate();
 let palette: Palette = paletteById(store.load().settings.palette);
-let audio: AudioContext | null = null;
 let toastTimer = 0;
 let tutorial: Tutorial | null = null;
 let identity: api.Identity | null = null;
@@ -212,7 +212,7 @@ function startTutorial(): void {
     },
     {
       onFinish: finishTutorial,
-      onIgnite: () => blip(700, 0.06, 'triangle', 0.05),
+      onIgnite: () => play('ignite'),
       onScore: (score) => {
         // Prefix rather than replace: the sentence underneath is the whole point
         // of the tutorial, and overwriting it threw away the lesson.
@@ -240,29 +240,6 @@ function toast(message: string): void {
   toastTimer = window.setTimeout(() => {
     ui.toast.hidden = true;
   }, 2200);
-}
-
-/**
- * Short synthesised blips. A handful of oscillators beats shipping audio files:
- * no assets to license, nothing to download, and it cannot fail to load.
- */
-function blip(freq: number, duration = 0.06, type: OscillatorType = 'sine', gain = 0.05): void {
-  if (!store.load().settings.sound) return;
-  try {
-    audio ??= new AudioContext();
-    if (audio.state === 'suspended') void audio.resume();
-    const osc = audio.createOscillator();
-    const amp = audio.createGain();
-    osc.type = type;
-    osc.frequency.value = freq;
-    amp.gain.setValueAtTime(gain, audio.currentTime);
-    amp.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + duration);
-    osc.connect(amp).connect(audio.destination);
-    osc.start();
-    osc.stop(audio.currentTime + duration);
-  } catch {
-    // No audio device, or autoplay policy. Silence is an acceptable outcome.
-  }
 }
 
 /**
@@ -396,7 +373,7 @@ function renderTray(): void {
     slot.addEventListener('click', () => {
       if (!session || used[i]) return;
       session.selected = session.selected === i ? null : i;
-      blip(660, 0.03, 'square', 0.03);
+      play('select');
       renderTray();
     });
 
@@ -434,7 +411,7 @@ function onBoardTap(clientX: number, clientY: number): void {
   if (existing >= 0) {
     session.placements.splice(existing, 1);
     session.selected = null;
-    blip(320, 0.05, 'triangle', 0.04);
+    play('pickup');
     renderTray();
     syncControls();
     return;
@@ -450,14 +427,14 @@ function onBoardTap(clientX: number, clientY: number): void {
     // Partial sets are legal now, so there is one code path and no special case.
     validatePlacements(session.board, candidate);
   } catch {
-    blip(180, 0.08, 'sawtooth', 0.03);
+    play('invalid');
     toast('Ahí no cabe una pieza');
     return;
   }
 
   session.placements = candidate;
   session.selected = null;
-  blip(880, 0.04, 'square', 0.035);
+  play('place');
   renderTray();
   syncControls();
 }
@@ -477,7 +454,7 @@ function launch(): void {
   ui.btnClear.disabled = true;
   ui.comboBadge.hidden = false;
   ui.comboBadge.textContent = '×1';
-  blip(140, 0.18, 'sawtooth', 0.06);
+  play('launch');
 
   // The clip is the growth engine, so it is captured from the canvas as the run
   // happens rather than reconstructed later. If the WebView cannot record, the
@@ -491,9 +468,9 @@ function launch(): void {
       ui.scoreLive.classList.add('bump');
       setTimeout(() => ui.scoreLive.classList.remove('bump'), 140);
       ui.comboBadge.textContent = `×${multiplier}`;
-      blip(420 + multiplier * 70, 0.05, 'triangle', 0.045);
+      play('ignite', comboRate(multiplier));
     },
-    onBomb: () => blip(90, 0.3, 'sawtooth', 0.09),
+    onBomb: () => play('bomb'),
     onDone: (score, ignited) => finishRun(s, score, ignited),
   });
 }
@@ -604,7 +581,7 @@ function renderResult(s: Session): void {
   renderOffers(s);
   ui.btnClip.hidden = lastClip === null;
   show('result');
-  blip(520, 0.12, 'sine', 0.05);
+  play('result');
 
   // Fire-and-forget: the result screen is already complete without it.
   if (s.ranked) void syncAndShowRank(s.date);
@@ -1130,7 +1107,7 @@ function bindResult(): void {
 
 function bindTutorial(): void {
   ui.btnTutNext.addEventListener('click', () => {
-    blip(600, 0.04, 'square', 0.03);
+    play('select');
     tutorial?.next();
   });
   el('btn-tut-skip').addEventListener('click', finishTutorial);
@@ -1247,6 +1224,7 @@ function boot(): void {
     boardView.setReducedMotion(true);
   }
   bind();
+  initSound(() => store.load().settings.sound);
   renderHome();
 
   // The web build has no daily reminder to restore; the call is kept so this

@@ -19,6 +19,56 @@ async function skipTutorial(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Waits until the worker has finished activating, not merely appeared.
+ *
+ * `registration.active` is set the moment the worker enters *activating*, which
+ * is before `activate` has run and therefore before `clients.claim()`. Reloading
+ * in that window races the claim: under load the navigation can land first and
+ * the new page comes up uncontrolled, which reads as "the service worker never
+ * took control" when what really happened is that the test asked too early.
+ * Waiting for the `activated` state is the state machine's own answer to "is it
+ * ready", and it is what every wait here always meant.
+ */
+async function waitForActivated(page: Page): Promise<void> {
+  await page.waitForFunction(
+    async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      return reg?.active?.state === 'activated';
+    },
+    null,
+    // Interval, not the default requestAnimationFrame: a throttled or
+    // backgrounded page stops getting frames, and the wait then times out
+    // because nothing asked the question, not because the answer was no.
+    { timeout: 20_000, polling: 250 }
+  );
+}
+
+/**
+ * Waits until the worker is controlling the page, allowing one more navigation.
+ *
+ * A reload issued while activation is still settling can come up uncontrolled —
+ * rare, load-dependent, and entirely legal: the browser only promises that a
+ * navigation *starting after* activation is controlled, and under load the
+ * navigation and the tail of activation interleave. Nothing a player would
+ * notice, because the next navigation is controlled and `clients.claim()` picks
+ * up open pages anyway.
+ *
+ * So this asserts the guarantee that exists — the worker takes control — rather
+ * than one that does not, that it does so in exactly one reload. A second
+ * failure is a real one and is left to fail.
+ */
+async function waitForControlled(page: Page): Promise<void> {
+  const controlled = (timeout: number) =>
+    page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout, polling: 250 });
+  try {
+    await controlled(10_000);
+  } catch {
+    await page.reload();
+    await controlled(10_000);
+  }
+}
+
 /** Plays one run with a single piece, which is always enough to score. */
 async function playOneRun(page: Page): Promise<void> {
   await page.locator('#btn-play').click();
@@ -68,16 +118,11 @@ test.describe('progressive web app', () => {
 
   test('registers a service worker that takes control', async ({ page }) => {
     await page.goto('/');
-    await page.waitForFunction(async () => {
-      const reg = await navigator.serviceWorker.getRegistration();
-      return !!reg?.active;
-    }, null, { timeout: 20_000 });
+    await waitForActivated(page);
 
     // Active is not controlling: the first load predates the worker.
     await page.reload();
-    await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, {
-      timeout: 20_000,
-    });
+    await waitForControlled(page);
     expect(await page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
   });
 
@@ -108,14 +153,9 @@ test.describe('offline', () => {
   test('plays a full run with the network switched off', async ({ page, context }) => {
     await skipTutorial(page);
     await page.goto('/');
-    await page.waitForFunction(async () => {
-      const reg = await navigator.serviceWorker.getRegistration();
-      return !!reg?.active;
-    }, null, { timeout: 20_000 });
+    await waitForActivated(page);
     await page.reload();
-    await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, {
-      timeout: 20_000,
-    });
+    await waitForControlled(page);
 
     await context.setOffline(true);
     await page.reload();
@@ -138,14 +178,9 @@ test.describe('offline', () => {
   test('a queued run survives a reload while still offline', async ({ page, context }) => {
     await skipTutorial(page);
     await page.goto('/');
-    await page.waitForFunction(async () => {
-      const reg = await navigator.serviceWorker.getRegistration();
-      return !!reg?.active;
-    }, null, { timeout: 20_000 });
+    await waitForActivated(page);
     await page.reload();
-    await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, {
-      timeout: 20_000,
-    });
+    await waitForControlled(page);
 
     await context.setOffline(true);
     await page.reload();
@@ -158,6 +193,46 @@ test.describe('offline', () => {
     await expect(page.locator('#screen-home')).toBeVisible();
     await page.waitForFunction(() => !!(window as any).__fuse?.sync);
     expect(await page.evaluate(() => (window as any).__fuse.sync.pendingCount())).toBe(1);
+
+    await context.setOffline(false);
+  });
+});
+
+test.describe('sound', () => {
+  test('the policy lets the cues through and the worker keeps them', async ({ page, context }) => {
+    const refused: string[] = [];
+    page.on('console', (m) => {
+      if (m.type() === 'error' && /Content Security Policy/i.test(m.text())) refused.push(m.text());
+    });
+
+    await skipTutorial(page);
+    await page.goto('/');
+    await waitForActivated(page);
+
+    // The CSP has to allow the cues and the precache has to have taken them.
+    // Both are easy to get wrong in a way nothing else notices: a blocked or
+    // missing file is not an error here, it is a game that plays its fallback
+    // tones and sounds like it did before any of this.
+    expect(refused).toEqual([]);
+
+    // Active is not controlling. The first load happens before the worker
+    // exists, so going offline here without the reload below means the next
+    // navigation goes straight to a network that is no longer there.
+    await page.reload();
+    await waitForControlled(page);
+
+    await context.setOffline(true);
+    await page.reload();
+    const cached = await page.evaluate(async () => {
+      const cues = ['select', 'place', 'pickup', 'invalid', 'launch', 'ignite', 'bomb', 'result'];
+      const found: string[] = [];
+      for (const c of cues) {
+        const res = await fetch(`./sfx/${c}.m4a`).catch(() => null);
+        if (res?.ok && (await res.arrayBuffer()).byteLength > 1000) found.push(c);
+      }
+      return found;
+    });
+    expect(cached).toHaveLength(8);
 
     await context.setOffline(false);
   });

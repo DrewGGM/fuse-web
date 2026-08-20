@@ -135,9 +135,37 @@ Response headers live in `public/_headers` — `frame-ancestors`, HSTS and the
 rest, which a `<meta>` tag cannot set. Hashed assets are immutable; `sw.js` is
 never cached, because a cached service worker cannot learn that a new one exists.
 
-The service worker's cache name is stamped from a hash of the source at build
-time, so every deploy invalidates cleanly and no deploy invalidates more than it
-has to.
+The service worker is stamped after the build, not before, because both things
+it needs only exist once the bundle does: the cache name, hashed from what is
+actually being shipped so every deploy invalidates cleanly and no deploy
+invalidates more than it has to, and the precache list, which names the hashed
+assets by their real filenames. Leaving those to the runtime cache looks like it
+works and is a race — on the first load the worker has not claimed the page yet,
+so the script and stylesheet requests never reach it.
+
+---
+
+## Assets
+
+Everything is generated or self-hosted; nothing is fetched at runtime.
+
+| Asset | Source | Licence |
+|---|---|---|
+| Chakra Petch | `@fontsource/chakra-petch`, subset to latin | SIL OFL 1.1 |
+| App icon | Drawn in code with the game's own palette | this project |
+| Eight sound cues | Kenney's *Interface Sounds*, *Digital Audio* and *Sci-Fi Sounds*, trimmed and levelled by `scripts/build-sfx.mjs` | CC0 1.0 |
+
+The board is drawn entirely in code — a sprite sheet cannot follow a beam whose
+path changes every run, or recolour itself when the player switches palette.
+Sound is the one place a recorded asset beats a generated one.
+
+The cues are precached by the service worker, so the game keeps its sound
+offline, and `sound.ts` keeps a synthesised fallback for every one of them: a
+file that fails to load or decode costs the game its texture, never its voice.
+
+```bash
+node scripts/build-sfx.mjs   # refetches the packs; needs ffmpeg on the path
+```
 
 ---
 

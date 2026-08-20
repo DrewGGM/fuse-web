@@ -920,6 +920,10 @@ h3 {
   color: var(--text-faint);
   text-align: center;
 }
+.settings-credit {
+  margin-top: 6px;
+  font-size: 0.68rem;
+}
 
 /* ------------------------------------------------------------ leaderboard */
 

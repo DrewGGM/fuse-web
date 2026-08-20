@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsx scripts/stamp-sw.ts && vite build",
+    "build": "vite build && tsx scripts/stamp-sw.ts",
     "preview": "vite preview --port 4180",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

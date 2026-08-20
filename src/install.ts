@@ -76,10 +76,20 @@ export async function promptInstall(): Promise<boolean> {
  */
 export function registerServiceWorker(): void {
   if (!('serviceWorker' in navigator)) return;
-  window.addEventListener('load', () => {
+
+  const register = (): void => {
     void navigator.serviceWorker.register('./sw.js').catch(() => {
       // Unsupported, blocked by policy, or served from a context that forbids
       // it. Nothing the player can act on.
     });
-  });
+  };
+
+  // Waiting for `load` keeps registration off the critical path, but only if
+  // `load` is still ahead of us. Module scripts normally run before it, so this
+  // usually holds — "usually" being the problem: a caller that reaches this
+  // after the event has fired would attach a listener to something that has
+  // already happened and register nothing, for the whole session, silently, and
+  // the failure looks exactly like a browser that does not support offline.
+  if (document.readyState === 'complete') register();
+  else window.addEventListener('load', register, { once: true });
 }

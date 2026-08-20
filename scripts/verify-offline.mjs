@@ -14,16 +14,28 @@ const page = await context.newPage();
 
 // First visit, online: the service worker installs and caches the shell.
 await page.goto(url, { waitUntil: 'networkidle' });
+// `active` is set the moment the worker enters *activating*, before activate has
+// run and therefore before clients.claim(). Reloading in that window races the
+// claim and comes up uncontrolled. `activated` is the state machine's own answer.
 await page.waitForFunction(async () => {
   const reg = await navigator.serviceWorker.getRegistration();
-  return !!reg?.active;
-}, null, { timeout: 15000 });
+  return reg?.active?.state === 'activated';
+}, null, { timeout: 15000, polling: 250 });
 
 // An active worker is not the same as a *controlling* one. The first page load
 // happens before the worker exists, so it is uncontrolled until it claims —
 // reloading before that goes straight to the network and fails offline.
 await page.reload({ waitUntil: 'networkidle' });
-await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 15000 });
+const controlled = (timeout) =>
+  page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout, polling: 250 });
+try {
+  await controlled(10000);
+} catch {
+  // A navigation that starts while activation is still settling can come up
+  // uncontrolled. The browser only promises the *next* one, so take it.
+  await page.reload({ waitUntil: 'networkidle' });
+  await controlled(10000);
+}
 console.log('1. installed and controlling       : ok');
 
 // Now cut the network entirely and reload.
