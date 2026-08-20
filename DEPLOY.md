@@ -43,7 +43,15 @@ Give it exactly these, and no more:
 | Account | Workers R2 Storage | Edit |
 | Account | D1 | Edit |
 | Account | Account Settings | Read |
+| Zone | **Workers Routes** | **Edit** |
 | Zone | DNS | Edit |
+| User | User Details | Read |
+
+`Workers Routes` is the one that is easy to miss and the one that fails: a
+custom domain is a zone-level route, so without it the deploy uploads the Worker
+and then dies on `/zones/.../workers/routes` with `Authentication error [code:
+10000]`. `User Details → Read` only silences a warning, but wrangler prints it
+loudly enough to look like the cause.
 
 Then scope it:
 

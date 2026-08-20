@@ -37,20 +37,27 @@ the workflow reads it the same way as the token.
 Create at **dash.cloudflare.com → My Profile → API Tokens → Create Token**.
 Start from *Edit Cloudflare Workers*, then narrow it. It needs exactly:
 
-| Permission | Level | Why |
+| Section | Permission | Level |
 |---|---|---|
-| Workers Scripts | Edit | deploy the Worker and the static site |
-| Workers R2 Storage | Edit | Workers Assets stores the built files here |
-| D1 | Edit | apply migrations, and the Worker's binding |
-| Account Settings | Read | wrangler resolves the account on start-up |
-| Zone → DNS | Edit | create the `fuse.` and `api.` records on first deploy |
+| Account | Workers Scripts | Edit |
+| Account | Workers R2 Storage | Edit |
+| Account | D1 | Edit |
+| Account | Account Settings | Read |
+| Zone | **Workers Routes** | **Edit** |
+| Zone | DNS | Edit |
+| User | User Details | Read |
+
+`Workers Routes` is the one that is easy to miss and the one that fails: a
+custom domain is a zone-level route, so without it the deploy uploads the Worker
+and then dies on `/zones/.../workers/routes` with `Authentication error [code:
+10000]`. `User Details → Read` only silences a warning, but wrangler prints it
+loudly enough to look like the cause.
 
 Scope it to **your account** and to the **`andrewgarcia.dev` zone** — not "all
 accounts", which is the default and grants far more than this needs.
 
-The Zone/DNS permission is only required for the first deploy of each custom
-domain. You could drop it afterwards, though leaving it means a future rename
-does not need a new token.
+The zone permissions are needed on every deploy that touches a route, not only
+the first, so leave them.
 
 **Do not reuse a Global API Key.** It has no scope at all: anything holding it
 can do everything to every zone on the account.
@@ -66,9 +73,11 @@ can do everything to every zone on the account.
 | `verify` | lint, typecheck, **core drift**, unit tests, production audit, end-to-end |
 | `deploy` | build with `FUSE_API_BASE`, `wrangler deploy`, then load the live URL in a real browser |
 
-The core-drift check is the one that matters most. Web and Android submit to the
-same leaderboard, so shipping a web build whose simulation has drifted would
-start producing scores the server cannot reproduce. That check gates the deploy.
+The core-drift check is the one that matters most. The two builds keep separate
+leaderboards, but they run the *same* vendored simulation — so a drift means a
+web player and a phone player are no longer playing the same game on the same
+day's board, and the two boards stop being comparable at all. That check gates
+the deploy.
 
 The final step is not decoration: a deploy can return success and still serve a
 page with a broken CSP, a rejected manifest, or a service worker that never
@@ -81,7 +90,7 @@ the run if any of that is wrong.
 |---|---|
 | `verify` | lint, typecheck, tests, **cross-engine parity**, end-to-end |
 | `android` | builds the AAB, proving the app half still compiles |
-| `deploy-api` | migrations, `wrangler deploy`, smoke test |
+| `deploy-api` | migrations, `wrangler deploy`, smoke test against the live API |
 
 `deploy-api` needs **both** earlier jobs. The Android build is included on
 purpose: the app and the Worker share the simulation, so a commit that breaks the
