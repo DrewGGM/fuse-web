@@ -12,8 +12,16 @@
  */
 import type { Placement } from '../core/sim/index.js';
 
-/** Where the API lives. Overridden at build time for local development. */
-const BASE_URL: string =
+/**
+ * Where the API lives. Overridden at build time for local development.
+ *
+ * Exported so a verification script can ask the page which API it is really
+ * talking to rather than infer it from the URL it was pointed at. Those are not
+ * the same question: a local preview built without FUSE_API_BASE submits to
+ * production, which is how a check meant for localhost put two invented names
+ * on the live leaderboard.
+ */
+export const BASE_URL: string =
   typeof __API_BASE__ === 'string' && __API_BASE__ ? __API_BASE__ : 'https://api-fuse.andrewgarcia.dev';
 
 /** A slow network must not hold the result screen hostage. */

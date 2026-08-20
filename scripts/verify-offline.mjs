@@ -4,16 +4,65 @@
  * This is the whole promise of the web build: install it, then play it on the
  * underground. Asserting it needs a real browser with a real service worker and
  * a real offline switch, which is not something a unit test can fake.
+ *
+ * Unlike every other check here, this one *writes*. Step 7 queues a genuine
+ * ranked run and step 8 waits for it to drain, which is the only honest way to
+ * test a queue — and against a live host it puts an invented name on the board
+ * real players compete on. It did, once, which is why the guard below exists:
+ * production needs saying out loud.
+ *
+ *   node scripts/verify-offline.mjs http://localhost:4180/
+ *
+ * It refuses to run unless the build it loads submits to a local API — which is
+ * not the same as being served from localhost, and is the distinction that
+ * caught us out.
+ *
+ * CI never runs this against production; it runs verify-production.mjs, which
+ * proves the same request path through a rejected submission and writes nothing.
  */
 import { chromium } from '@playwright/test';
 
 const url = process.argv[2] ?? 'http://localhost:8788/';
+
+
 const browser = await chromium.launch();
 const context = await browser.newContext();
 const page = await context.newPage();
 
 // First visit, online: the service worker installs and caches the shell.
 await page.goto(url, { waitUntil: 'networkidle' });
+
+// Which API is this build actually talking to?
+//
+// Not "which host did I type" — those come apart, and that is the whole trap. A
+// local preview built without FUSE_API_BASE points at production, so the safe
+// looking `verify-offline.mjs http://localhost:4180/` submits a real ranked run
+// to the real board. Ask the page instead of guessing.
+const apiBase = await page.evaluate(() => window.__fuse?.api?.BASE_URL);
+// An unreadable answer is a refusal, not a pass. It means the page is older than
+// this script, and an old page is exactly the one that submits to production.
+const localApi =
+  typeof apiBase === 'string' &&
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(apiBase);
+if (!localApi && !process.argv.includes('--allow-production')) {
+  console.error(
+    typeof apiBase === 'string'
+      ? `Refusing to run: this build submits to ${apiBase}.`
+      : 'Refusing to run: could not read which API this build submits to. Rebuild it.'
+  );
+  console.error('');
+  console.error('Step 7 queues a genuine ranked run and step 8 waits for it to drain, so');
+  console.error('it would land on the live leaderboard under an invented handle. Rebuild');
+  console.error('against a local worker:');
+  console.error('');
+  console.error('  npm run api:dev                                   # in another shell');
+  console.error('  cross-env FUSE_API_BASE=http://localhost:8787 npm run build && npm run preview');
+  console.error('');
+  console.error('Pass --allow-production if that is genuinely what you want, and clean the');
+  console.error('row out afterwards.');
+  await browser.close();
+  process.exit(1);
+}
 // `active` is set the moment the worker enters *activating*, before activate has
 // run and therefore before clients.claim(). Reloading in that window races the
 // claim and comes up uncontrolled. `activated` is the state machine's own answer.
