@@ -14,7 +14,7 @@ import type { Placement } from '../core/sim/index.js';
 
 /** Where the API lives. Overridden at build time for local development. */
 const BASE_URL: string =
-  typeof __API_BASE__ === 'string' && __API_BASE__ ? __API_BASE__ : 'https://api.fuse.andrewgarcia.dev';
+  typeof __API_BASE__ === 'string' && __API_BASE__ ? __API_BASE__ : 'https://api-fuse.andrewgarcia.dev';
 
 /** A slow network must not hold the result screen hostage. */
 const TIMEOUT_MS = 6000;

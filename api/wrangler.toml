@@ -21,12 +21,13 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "fuse-web-db"
-# Filled in by `npx wrangler d1 create fuse-web-db`.
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+# Created 2026-08-19. Not a secret: it identifies the database, it does not
+# grant access to it — that comes from the account binding.
+database_id = "7ddfac13-d4b3-402b-a3b9-00249688cad1"
 migrations_dir = "migrations"
 
 [[routes]]
-pattern = "api.fuse.andrewgarcia.dev"
+pattern = "api-fuse.andrewgarcia.dev"
 custom_domain = true
 
 # TOKEN_SECRET is deliberately absent.

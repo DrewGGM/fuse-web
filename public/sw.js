@@ -19,7 +19,7 @@
  * cache is deleted on activate, and there is no staleness to reason about.
  */
 
-const CACHE_NAME = 'fuse-9a296ad7bdca';
+const CACHE_NAME = 'fuse-57ee7792802b';
 
 /** Everything needed to start the game with no network at all. */
 const PRECACHE = ['./', './index.html', './manifest.webmanifest', './favicon.png', './icon-512.png'];

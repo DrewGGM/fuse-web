@@ -1,117 +1,153 @@
 # Deploying
 
-Two things go up: this site, and the API it talks to. They are independent —
-the site works without the API, it just has no leaderboard — so deploy the site
-first and get something you can look at.
+**The web build is live.** `https://fuse.andrewgarcia.dev`, with its leaderboard
+at `https://api-fuse.andrewgarcia.dev`.
 
-Your Cloudflare account (`pages@andrewgarcia.dev`) is already authenticated, and
-`andrewgarcia.dev` already uses Cloudflare nameservers. That removes the two
-things that usually block this.
+| | |
+|---|---|
+| Site | `fuse-web` Worker, static assets |
+| API | `fuse-web-api` Worker |
+| Database | `fuse-web-db` (D1), `7ddfac13-d4b3-402b-a3b9-00249688cad1` |
+| Signing secret | set as a Cloudflare secret, not in this repository |
+
+Redeploying by hand is two commands:
+
+```bash
+npm run api:deploy    # only when api/ changed
+npm run deploy        # build and publish the site
+```
 
 ---
 
-## 1. The site
+## The one thing left: deploy on push
+
+Everything above happens automatically once GitHub can talk to Cloudflare. Two
+secrets, once.
+
+### 1. `CLOUDFLARE_ACCOUNT_ID`
+
+```
+45b874a5d5551005fb44634d46759bf8
+```
+
+### 2. `CLOUDFLARE_API_TOKEN`
+
+**dash.cloudflare.com → My Profile → API Tokens → Create Token → Create Custom
+Token.**
+
+Give it exactly these, and no more:
+
+| Section | Permission | Level |
+|---|---|---|
+| Account | Workers Scripts | Edit |
+| Account | Workers R2 Storage | Edit |
+| Account | D1 | Edit |
+| Account | Account Settings | Read |
+| Zone | DNS | Edit |
+
+Then scope it:
+
+- **Account Resources** → Include → `Pages@andrewgarcia.dev's Account`
+- **Zone Resources** → Include → Specific zone → `andrewgarcia.dev`
+
+Not "All accounts", which is the default and grants far more than this needs.
+Never a Global API Key, which has no scope at all.
+
+Copy the token — it is shown once.
+
+### 3. Add both to GitHub
 
 ```bash
+gh secret set CLOUDFLARE_ACCOUNT_ID --body "45b874a5d5551005fb44634d46759bf8"
+gh secret set CLOUDFLARE_API_TOKEN          # paste when prompted
+```
+
+Or **Settings → Secrets and variables → Actions → New repository secret** in the
+browser. Do it in both `fuse-web` and `fuse-game`.
+
+### 4. Prove it
+
+```bash
+git commit --allow-empty -m "check the pipeline"
+git push
+gh run watch
+```
+
+The deploy job should now run its steps instead of skipping them. Without the
+secrets it posts a notice and stops, which is why every push so far has been
+green with nothing deployed.
+
+---
+
+## Setting it up somewhere else
+
+The commands that produced the current deployment, in order:
+
+```bash
+cd api
+npx wrangler d1 create fuse-web-db
+# paste the printed database_id into api/wrangler.toml
+
+npx wrangler d1 migrations apply fuse-web-db --remote --config ./wrangler.toml
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" \
+  | npx wrangler secret put TOKEN_SECRET --config ./wrangler.toml
+npx wrangler deploy --config ./wrangler.toml
+
+cd ..
 npm run deploy
 ```
 
-That runs the build and publishes. On the first deploy Cloudflare creates the
-DNS record for `fuse.andrewgarcia.dev` itself, because `wrangler.jsonc` declares
-the route as a `custom_domain`. Expect a minute or two for the certificate.
+**`--config ./wrangler.toml` is not optional** when running from `api/`.
+Wrangler searches upward and finds the site's `wrangler.jsonc` at the repository
+root, then reports that it cannot find a database binding which is defined right
+there in front of it. That error cost ten minutes the first time.
 
-**If it fails on the route**, the zone is not reachable from this account — the
-domain uses Cloudflare nameservers, but it must also be a zone on *this* account
-rather than another one. Two options:
+**`TOKEN_SECRET` must be a secret, never a `[vars]` entry.** A var in
+`wrangler.toml` becomes the deployed value, so putting it there publishes the
+signing key to a public repository.
 
-- Add `andrewgarcia.dev` to the `pages@andrewgarcia.dev` account, or
-- Comment out the `routes` block and deploy anyway. The site is then live at
-  `fuse-web.<account>.workers.dev`, which is a perfectly good place to test.
+---
 
-Check it:
+## Verifying a deployment
 
 ```bash
-curl -sI https://fuse.andrewgarcia.dev | head -1
 node scripts/verify-web.mjs https://fuse.andrewgarcia.dev
+node scripts/verify-production.mjs
 ```
 
-The second one loads the deployed site in a clean browser and reports CSP
-violations, whether the manifest is accepted, and whether the service worker
-takes control. If it passes, the site is genuinely installable.
+The first loads the site in a clean browser and reports CSP violations, whether
+the manifest is accepted and whether the service worker takes control. The
+second plays an actual ranked run against the live API and checks the rank comes
+back — which is the only test that exercises DNS, TLS, the Worker and D1 at once.
+
+Both run in CI after a deploy, so a deploy that succeeds while serving something
+broken fails the build.
 
 ---
 
-## 2. The API
+## Still to do before real traffic
 
-From the [fuse-game](https://github.com/DrewGGM/fuse-game) checkout:
-
-```bash
-cd apps/api
-npx wrangler d1 create fuse-db
-# paste the printed database_id into wrangler.toml
-npx wrangler d1 migrations apply fuse-db --remote
-npx wrangler secret put TOKEN_SECRET     # openssl rand -base64 32
-npx wrangler deploy
-```
-
-Then give it the matching hostname so it sits on the same zone. In
-`apps/api/wrangler.toml`:
-
-```toml
-routes = [
-  { pattern = "api.fuse.andrewgarcia.dev", custom_domain = true }
-]
-```
-
-If you host it somewhere else instead, rebuild this site pointing at it —
-`FUSE_API_BASE` drives both the client and the CSP's `connect-src`, so they
-cannot fall out of step:
-
-```bash
-FUSE_API_BASE=https://your-api.example.com npm run deploy
-```
-
-### Before real traffic
-
-Two things the API still needs, both from the fuse-game repository's
-`docs/release.md`:
-
-- **Security headers** on Worker responses: `X-Frame-Options`,
-  `X-Content-Type-Options`, `Strict-Transport-Security`. This site sets its own
-  in `public/_headers`; the API does not yet.
-- **A rate limit on `POST /v1/players`.** Every other endpoint is bounded —
-  three ranked attempts per player per day — but player creation is not, and it
-  writes a row. Cloudflare dashboard → Security → WAF → Rate limiting rules.
+- **Rate limit `POST /v1/players`.** Every other endpoint is bounded — three
+  ranked attempts per player per day, counted on the player row — but player
+  creation writes a row for anyone who asks. Cloudflare dashboard → Security →
+  WAF → Rate limiting rules.
+- **Security headers on the API's responses.** The site sets its own in
+  `public/_headers`; the Worker does not yet set `X-Frame-Options`,
+  `X-Content-Type-Options` or HSTS.
 
 ---
 
-## Decisions you may want to revisit
+## Decisions already made
 
-**One leaderboard or two.** Right now web and Android submit to the same API, so
-they share a board. That is the right default — a daily puzzle with two separate
-communities is two smaller communities — but it does mean a web player and a
-phone player compete directly, and the web build has no ads while the Android one
-eventually will. If you would rather split them, deploy a second Worker and
-point `FUSE_API_BASE` at it.
+**Separate leaderboards.** This API serves the web build only. The Android app
+has its own in [fuse-game](https://github.com/DrewGGM/fuse-game), with its own
+database. The code is identical and vendored from the same `core/`; only the
+deployment and therefore the community differ.
 
-**The web build is free of ads on purpose.** Its job is to be the frictionless
-way to try the game and the way you recruit the twelve testers Play requires
-before production access. Monetising it would tax exactly that.
+**No ads or purchases on the web.** Its job is to be the frictionless way to try
+the game, and how the twelve testers Play requires get recruited.
 
-**Analytics.** There is none. Cloudflare Web Analytics is one script tag and no
-cookies, but it needs a `script-src` entry in the CSP, so it is a deliberate
-choice rather than something to add by reflex.
-
----
-
-## Routine
-
-```bash
-npm run ci        # lint, types, core drift, tests, build
-npm run deploy    # build and publish
-```
-
-`npm run core:check` is the one that matters most. Both builds submit to the
-same leaderboard, so the vendored simulation in `core/` must behave identically
-to the Android one. If it fails, do not adjust the pinned fingerprint to make it
-pass — resync, or reconcile the change in both repositories deliberately.
+**Cloudflare Web Analytics is allowed in the CSP.** Cloudflare injects the
+beacon at zone level, and a policy that blocks it leaves a failing script tag on
+every page load without stopping the request. It is cookieless. To have none,
+turn the injection off in the dashboard *and* remove it from the CSP.

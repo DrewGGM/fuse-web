@@ -3,7 +3,7 @@
 The browser build of [Fuse](https://github.com/DrewGGM/fuse-game), a daily
 chain-reaction puzzle. Same board, same leaderboard, no install required.
 
-**Live at:** `fuse.andrewgarcia.dev` *(once deployed — see below)*
+**Live at [fuse.andrewgarcia.dev](https://fuse.andrewgarcia.dev)** · leaderboard at `api-fuse.andrewgarcia.dev`
 
 ```
         ▽

@@ -26,6 +26,13 @@
       inline style attributes, and style-src-attr is not reliable across the
       Android WebView versions this targets.
 
+      cloudflareinsights.com is allowed because Cloudflare injects its Web
+      Analytics beacon at the zone level, and a policy that blocks it just leaves
+      a failing script tag on every page load. It is cookieless and collects no
+      personal data. To have no analytics at all, turn the injection off in the
+      Cloudflare dashboard and remove it from here — blocking it in the policy
+      alone stops the measurement without stopping the request.
+
       manifest-src and worker-src are here because default-src 'none' otherwise
       blocks both, and the failure is quiet in the worst way: the page works,
       but the browser refuses the manifest and the app is silently not
@@ -39,7 +46,7 @@
       build silently had its own API blocked — which did at least prove the
       policy is enforced, and that the offline queue handles it.
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; media-src 'self' blob:; connect-src 'self' %API_ORIGIN%; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; media-src 'self' blob:; connect-src 'self' %API_ORIGIN% https://cloudflareinsights.com; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'" />
     <meta name="theme-color" content="#070B0D" />
     <meta name="description" content="Fuse — un reto de reacción en cadena al día. El mismo tablero para todo el mundo." />
     <title>Fuse</title>

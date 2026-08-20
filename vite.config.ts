@@ -7,7 +7,7 @@ import { defineConfig } from 'vite';
  * zone and there is one place to reason about DNS. Override for local work:
  *   FUSE_API_BASE=http://localhost:8787 npm run build
  */
-const API_BASE = process.env.FUSE_API_BASE ?? 'https://api.fuse.andrewgarcia.dev';
+const API_BASE = process.env.FUSE_API_BASE ?? 'https://api-fuse.andrewgarcia.dev';
 
 /**
  * Keeps the CSP's connect-src in step with the API this build targets.
