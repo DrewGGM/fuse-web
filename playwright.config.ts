@@ -19,6 +19,10 @@ export default defineConfig({
       use: { ...devices['Pixel 5'] },
     },
   ],
+  // reuseExistingServer is off even locally: it twice served the Android
+  // repository's preview instead of this one, because both projects run a Vite
+  // preview and a killed run leaves the port held. A suite that tests whatever
+  // happens to be listening is not testing anything.
   webServer: {
     // `vite preview` serves the built output, which is what the service worker
     // and the CSP need — a dev server serves neither the way production does.
@@ -26,9 +30,13 @@ export default defineConfig({
     // Port 4180, not the usual 4173: the Android repository's preview uses that,
     // and with reuseExistingServer a stale one silently serves the wrong build.
     // Half an hour went into a manifest that was missing because of it.
-    command: 'npm run build && npm run preview',
+    // FUSE_API_BASE points at a port nothing listens on, so the suite cannot
+    // reach the real API even by accident. The leaderboard tests stub the
+    // network themselves; the rest must never touch production, which they did
+    // the moment the API went live — submitting fabricated runs to a real board.
+    command: 'cross-env FUSE_API_BASE=http://127.0.0.1:9 npm run build && npm run preview',
     url: 'http://localhost:4180',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });
