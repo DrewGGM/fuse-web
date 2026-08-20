@@ -358,6 +358,49 @@ describe('denial of service', () => {
   });
 });
 
+describe('player creation rate limit', () => {
+  it('throttles a single IP after the limit, and the pentest scenario', async () => {
+    // The live pentest created 30 players from one address with no resistance.
+    // The header carries the client IP; the handler counts recent rows for it.
+    const create = (ip: string) =>
+      worker.fetch(
+        new Request('https://api.test/v1/players', {
+          method: 'POST',
+          headers: { 'cf-connecting-ip': ip },
+        }),
+        env
+      );
+
+    let created = 0;
+    let limited = 0;
+    for (let i = 0; i < 30; i++) {
+      const res = await create('203.0.113.7');
+      if (res.status === 201) created++;
+      else if (res.status === 429) limited++;
+    }
+    expect(created).toBe(20);
+    expect(limited).toBe(10);
+
+    // A different address is unaffected — the limit is per IP, not global.
+    expect((await create('203.0.113.8')).status).toBe(201);
+  });
+});
+
+describe('response headers', () => {
+  it('sets the security headers a JSON API needs', async () => {
+    // Found missing on the live Worker by a pentest: the static site had them,
+    // the API did not, because a header set does not carry across services.
+    const res = await worker.fetch(
+      new Request('https://api.test/v1/daily/2026-08-20', { method: 'GET' }),
+      env
+    );
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    expect(res.headers.get('strict-transport-security')).toContain('max-age=');
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+  });
+});
+
 describe('information disclosure', () => {
   it('never returns another player’s identifiers on the leaderboard', async () => {
     const player = await newPlayer();

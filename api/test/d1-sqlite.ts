@@ -21,9 +21,12 @@ class Statement {
     return this;
   }
 
-  run(): Promise<{ success: true }> {
-    this.db.prepare(this.sql).run(...(this.args as never[]));
-    return Promise.resolve({ success: true });
+  run(): Promise<{ success: true; meta: { changes: number } }> {
+    // node:sqlite reports the affected-row count as `changes`, which is exactly
+    // what D1 exposes as meta.changes. Surfacing it lets the conditional INSERT
+    // that enforces the attempt limit be tested against a real SQL engine.
+    const info = this.db.prepare(this.sql).run(...(this.args as never[]));
+    return Promise.resolve({ success: true, meta: { changes: Number(info.changes ?? 0) } });
   }
 
   first<T = Row>(): Promise<T | null> {

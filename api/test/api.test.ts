@@ -63,6 +63,14 @@ function goodRun(date: string): { placements: any[]; score: number } {
   return { placements: best, score: runSim(board, best).score };
 }
 
+const MAX_ATTEMPTS_LOCAL = 3;
+
+/** Row count of a table, for asserting nothing extra slipped in. */
+async function rowCount(table: 'run' | 'player'): Promise<number> {
+  const row = await db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 // ---------------------------------------------------------------------------
 
 describe('tokens', () => {
@@ -222,6 +230,24 @@ describe('POST /v1/runs', () => {
       const res = await call('POST', '/v1/runs', { token: player.token, body });
       expect(res.status, JSON.stringify(body)).toBe(400);
     }
+  });
+
+  it('holds the attempt limit under concurrent submissions', async () => {
+    // The regression that a live pentest found and every sequential test missed.
+    // "Count, check, insert" as three steps is a race: eight requests arriving
+    // together all count zero, all decide they are the first, and all insert.
+    // Firing them concurrently is the only way to catch it.
+    const player = await newPlayer();
+    const { placements, score } = goodRun(TODAY);
+    const body = { date: TODAY, placements, clientScore: score };
+
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => call('POST', '/v1/runs', { token: player.token, body }))
+    );
+    const accepted = results.filter((r) => r.status === 200).length;
+
+    expect(accepted).toBeLessThanOrEqual(MAX_ATTEMPTS_LOCAL);
+    expect(await rowCount('run')).toBeLessThanOrEqual(MAX_ATTEMPTS_LOCAL);
   });
 
   it('enforces three ranked attempts per day', async () => {

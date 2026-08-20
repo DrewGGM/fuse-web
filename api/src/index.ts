@@ -53,7 +53,13 @@ async function route(request: Request, env: Env): Promise<Response> {
 
   if (method === 'OPTIONS') return cors(new Response(null, { status: 204 }));
 
-  if (method === 'POST' && path === '/v1/players') return cors(await createPlayer(env));
+  if (method === 'POST' && path === '/v1/players') {
+    const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
+    if (!(await withinPlayerCreationLimit(env, ip))) {
+      return cors(errorResponse('RATE_LIMITED', 'Too many new players from this address', 429));
+    }
+    return cors(await createPlayer(env));
+  }
 
   const daily = /^\/v1\/daily\/([^/]+)$/.exec(path);
   if (method === 'GET' && daily) return cors(getDaily(daily[1]));
@@ -69,17 +75,63 @@ async function route(request: Request, env: Env): Promise<Response> {
   return cors(errorResponse('NOT_FOUND', `No route for ${method} ${path}`, 404));
 }
 
+/**
+ * Adds CORS and the security headers that apply to a JSON API.
+ *
+ * A pentest found these missing on the deployed Worker while the static site
+ * had them: a response header set is not inherited across services. The set
+ * here is the subset that means anything for an API that serves JSON and holds
+ * no cookies — nosniff stops content-type confusion, DENY stops the responses
+ * being framed, and HSTS keeps the connection on TLS. A CSP is omitted on
+ * purpose: these responses render nothing.
+ */
 function cors(res: Response): Response {
   const headers = new Headers(res.headers);
   headers.set('access-control-allow-origin', '*');
   headers.set('access-control-allow-headers', 'content-type, authorization');
   headers.set('access-control-allow-methods', 'GET, POST, OPTIONS');
+  headers.set('x-content-type-options', 'nosniff');
+  headers.set('x-frame-options', 'DENY');
+  headers.set('referrer-policy', 'no-referrer');
+  headers.set('strict-transport-security', 'max-age=31536000; includeSubDomains');
   return new Response(res.body, { status: res.status, headers });
 }
 
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
+
+/** How many new players one IP may create in the window. Generous for a person,
+ *  ruinous for a script. */
+const PLAYER_CREATE_LIMIT = 20;
+const PLAYER_CREATE_WINDOW_MS = 60_000;
+
+/**
+ * Per-IP throttle for player creation, the only write with no prior identity.
+ *
+ * A pentest created 30 rows from one client against no resistance. This is
+ * enforced in D1 rather than through the experimental rate-limit binding,
+ * because the binding's production behaviour under the `unsafe` config proved
+ * unreliable and a leaderboard's one unbounded write deserves a control that is
+ * actually running. The DELETE keeps the table from growing without bound.
+ */
+async function withinPlayerCreationLimit(env: Env, ip: string): Promise<boolean> {
+  const now = Date.now();
+  const since = now - PLAYER_CREATE_WINDOW_MS;
+
+  await env.DB.prepare('DELETE FROM ip_throttle WHERE created_at < ?').bind(since).run();
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM ip_throttle WHERE ip = ? AND created_at >= ?'
+  )
+    .bind(ip, since)
+    .first<{ n: number }>();
+  if ((row?.n ?? 0) >= PLAYER_CREATE_LIMIT) return false;
+
+  await env.DB.prepare('INSERT INTO ip_throttle (ip, created_at) VALUES (?, ?)')
+    .bind(ip, now)
+    .run();
+  return true;
+}
 
 /** Anonymous identity. No email, no password, nothing to leak (ADR-004). */
 async function createPlayer(env: Env): Promise<Response> {
@@ -139,11 +191,6 @@ async function submitRun(request: Request, env: Env): Promise<Response> {
     return errorResponse('DATE_NOT_TODAY', 'Runs can only be submitted for the current UTC day', 409);
   }
 
-  const attempts = await countAttempts(env, playerId, submission.date);
-  if (attempts >= MAX_ATTEMPTS) {
-    return errorResponse('ATTEMPTS_EXHAUSTED', `Only ${MAX_ATTEMPTS} ranked attempts per day`, 409);
-  }
-
   const board = dailyBoard(submission.date);
   let placements: Placement[];
   let result: ReturnType<typeof run>;
@@ -169,10 +216,24 @@ async function submitRun(request: Request, env: Env): Promise<Response> {
     return errorResponse('SCORE_MISMATCH', 'Reported score does not match the replay', 422);
   }
 
-  const attemptNo = attempts + 1;
-  await env.DB.prepare(
+  // The attempt limit is enforced by the INSERT itself, not by a prior count.
+  //
+  // The obvious "count, check, insert" is a check-then-act race: under
+  // concurrent submissions every request counts the same low number, all decide
+  // they are within the limit, and all insert. It passed every sequential test
+  // and broke the moment eight requests arrived at once against real D1 — a
+  // player could take every leaderboard slot.
+  //
+  // Here the row is only written when the player is still under the cap, checked
+  // inside the same statement. attempt_no is derived the same way, so two racing
+  // inserts computing the same number collide on the unique index and one is
+  // dropped. Either way the number of rows actually written is the source of
+  // truth, and `meta.changes` reports it.
+  const insert = await env.DB.prepare(
     `INSERT INTO run (id, player_id, date, score, placements, attempt_no, submitted_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+     SELECT ?, ?, ?, ?, ?, COALESCE(MAX(attempt_no), 0) + 1, ?
+       FROM run WHERE player_id = ? AND date = ?
+     HAVING COUNT(*) < ?
      ON CONFLICT(player_id, date, attempt_no) DO NOTHING`
   )
     .bind(
@@ -181,11 +242,27 @@ async function submitRun(request: Request, env: Env): Promise<Response> {
       submission.date,
       result.score,
       JSON.stringify(submission.placements),
-      attemptNo,
-      Date.now()
+      Date.now(),
+      playerId,
+      submission.date,
+      MAX_ATTEMPTS
     )
     .run();
 
+  const written = insert.meta?.changes ?? insert.meta?.rows_written ?? 0;
+  if (written === 0) {
+    // Either the cap was reached, or a concurrent insert won the same slot.
+    // Both mean this submission did not count.
+    const used = await countAttempts(env, playerId, submission.date);
+    if (used >= MAX_ATTEMPTS) {
+      return errorResponse('ATTEMPTS_EXHAUSTED', `Only ${MAX_ATTEMPTS} ranked attempts per day`, 409);
+    }
+    // Lost a race for a slot that is still open: safe to retry once.
+    return errorResponse('RETRY', 'Please try again', 409);
+  }
+
+  const attempts = await countAttempts(env, playerId, submission.date);
+  const attemptNo = attempts;
   const rank = await rankOf(env, submission.date, result.score);
   const total = await countPlayers(env, submission.date);
 

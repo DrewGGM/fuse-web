@@ -133,15 +133,17 @@ broken fails the build.
 
 ---
 
-## Still to do before real traffic
+## Hardening done (live pentest, 20 Aug 2026)
 
-- **Rate limit `POST /v1/players`.** Every other endpoint is bounded — three
-  ranked attempts per player per day, counted on the player row — but player
-  creation writes a row for anyone who asks. Cloudflare dashboard → Security →
-  WAF → Rate limiting rules.
-- **Security headers on the API's responses.** The site sets its own in
-  `public/_headers`; the Worker does not yet set `X-Frame-Options`,
-  `X-Content-Type-Options` or HSTS.
+A penetration test against the deployed system found and fixed three issues;
+full write-up in [`../games lyroo/docs/pentest-live.md`](../games%20lyroo/docs/pentest-live.md).
+
+- **Attempt-limit race — fixed.** Concurrent submissions could all be accepted;
+  the limit is now enforced inside the INSERT itself, atomically.
+- **Rate limit on `POST /v1/players` — done.** 20 new players per minute per IP,
+  enforced in D1 (`ip_throttle` table). It was the only unbounded write.
+- **Security headers on the API — done.** `X-Content-Type-Options`,
+  `X-Frame-Options`, `Referrer-Policy` and HSTS on every response.
 
 ---
 

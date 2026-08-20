@@ -8,9 +8,15 @@
  * adapter satisfy the same interface without pretending to be a Worker runtime.
  */
 
+export interface D1Result {
+  /** Rows the statement actually changed. D1 and the SQLite test adapter both
+   *  populate this; it is how a conditional INSERT reports whether it fired. */
+  readonly meta: { readonly changes?: number; readonly rows_written?: number };
+}
+
 export interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
-  run(): Promise<unknown>;
+  run(): Promise<D1Result>;
   first<T = Record<string, unknown>>(): Promise<T | null>;
   all<T = Record<string, unknown>>(): Promise<{ results: T[] }>;
 }
